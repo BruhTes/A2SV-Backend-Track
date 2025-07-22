@@ -34,7 +34,7 @@ func InitMongoConnection() {
 	}
 
 	taskCollection = client.Database("taskdb").Collection("tasks")
-	log.Println("✅ Connected to MongoDB and ready!")
+	log.Println("Connected to MongoDB and ready!")
 }
 
 // Create a new task
@@ -45,7 +45,7 @@ func CreateTask(newTask models.Task) models.Task {
 
 	_, err := taskCollection.InsertOne(context.TODO(), newTask)
 	if err != nil {
-		log.Fatal("❌ Failed to insert task:", err)
+		log.Fatal("Failed to insert task:", err)
 	}
 
 	return newTask
@@ -55,13 +55,13 @@ func CreateTask(newTask models.Task) models.Task {
 func GetTasks() []models.Task {
 	cursor, err := taskCollection.Find(context.TODO(), bson.M{})
 	if err != nil {
-		log.Fatal("❌ Failed to get tasks:", err)
+		log.Fatal("Failed to get tasks:", err)
 	}
 	defer cursor.Close(context.TODO())
 
 	var tasks []models.Task
 	if err := cursor.All(context.TODO(), &tasks); err != nil {
-		log.Fatal("❌ Failed to decode tasks:", err)
+		log.Fatal("Failed to decode tasks:", err)
 	}
 
 	return tasks

@@ -66,3 +66,30 @@ func DeleteTask(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Task deleted successfully"})
 }
+
+func RegisterUser(c *gin.Context) {
+	var input struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		return
+	}
+
+	user, err := data.RegisterUser(input.Username, input.Password)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "User registered successfully",
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"role":     user.Role,
+		},
+	})
+}
