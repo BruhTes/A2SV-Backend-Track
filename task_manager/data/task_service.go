@@ -1,83 +1,123 @@
 package data
 
 import (
+	"context"
 	"errors"
+	"log"
 	"time"
 
 	"task_manager/models"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var tasks = []models.Task{
-	{
-		ID:          1,
-		Title:       "Sample Task 1",
-		Description: "This is a sample task",
-		DueDate:     time.Now().Add(24 * time.Hour),
-		Status:      models.StatusPending,
-	},
-	{
-		ID:          2,
-		Title:       "Sample Task 2",
-		Description: "Another sample task",
-		DueDate:     time.Now().Add(48 * time.Hour),
-		Status:      models.StatusCompleted,
-	},
-}
+// Collection to interact with MongoDB
+var taskCollection *mongo.Collection
 
-var nextID = 3
-
-func GetTasks() []models.Task {
-	return tasks
-}
-
-func GetTaskByID(id int) (*models.Task, error) {
-	for i := range tasks {
-		if tasks[i].ID == id {
-			return &tasks[i], nil
-		}
+// Connect to MongoDB once when the program starts
+func InitMongoConnection() {
+	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
+	client, err := mongo.NewClient(clientOptions)
+	if err != nil {
+		log.Fatal("Failed to create Mongo client:", err)
 	}
-	return nil, errors.New("task not found")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = client.Connect(ctx)
+	if err != nil {
+		log.Fatal("Failed to connect to MongoDB:", err)
+	}
+
+	taskCollection = client.Database("taskdb").Collection("tasks")
+	log.Println("✅ Connected to MongoDB and ready!")
 }
 
+// Create a new task
 func CreateTask(newTask models.Task) models.Task {
-	newTask.ID = nextID
-	nextID++
-
 	if newTask.Status == "" {
 		newTask.Status = models.StatusPending
 	}
 
-	tasks = append(tasks, newTask)
+	_, err := taskCollection.InsertOne(context.TODO(), newTask)
+	if err != nil {
+		log.Fatal("❌ Failed to insert task:", err)
+	}
+
 	return newTask
 }
 
-func UpdateTask(id int, updatedTask models.Task) (*models.Task, error) {
-	for i := range tasks {
-		if tasks[i].ID == id {
-			if updatedTask.Title != "" {
-				tasks[i].Title = updatedTask.Title
-			}
-			if updatedTask.Description != "" {
-				tasks[i].Description = updatedTask.Description
-			}
-			if !updatedTask.DueDate.IsZero() {
-				tasks[i].DueDate = updatedTask.DueDate
-			}
-			if updatedTask.Status != "" {
-				tasks[i].Status = updatedTask.Status
-			}
-			return &tasks[i], nil
-		}
+// Get all tasks
+func GetTasks() []models.Task {
+	cursor, err := taskCollection.Find(context.TODO(), bson.M{})
+	if err != nil {
+		log.Fatal("❌ Failed to get tasks:", err)
 	}
-	return nil, errors.New("task not found")
+	defer cursor.Close(context.TODO())
+
+	var tasks []models.Task
+	if err := cursor.All(context.TODO(), &tasks); err != nil {
+		log.Fatal("❌ Failed to decode tasks:", err)
+	}
+
+	return tasks
 }
 
-func DeleteTask(id int) error {
-	for i := range tasks {
-		if tasks[i].ID == id {
-			tasks = append(tasks[:i], tasks[i+1:]...)
-			return nil
-		}
+// Get one task by ID
+func GetTaskByID(id string) (*models.Task, error) {
+	objID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, errors.New("invalid ID format")
 	}
-	return errors.New("task not found")
+
+	var task models.Task
+	err = taskCollection.FindOne(context.TODO(), bson.M{"_id": objID}).Decode(&task)
+	if err != nil {
+		return nil, errors.New("task not found")
+	}
+
+	return &task, nil
+}
+
+// Update a task
+func UpdateTask(id string, updated models.Task) (*models.Task, error) {
+	objID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, errors.New("invalid ID format")
+	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"title":       updated.Title,
+			"description": updated.Description,
+			"due_date":    updated.DueDate,
+			"status":      updated.Status,
+		},
+	}
+
+	_, err = taskCollection.UpdateOne(context.TODO(), bson.M{"_id": objID}, update)
+	if err != nil {
+		return nil, errors.New("failed to update task")
+	}
+
+	return GetTaskByID(id)
+}
+
+// Delete a task
+func DeleteTask(id string) error {
+	objID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("invalid ID format")
+	}
+
+	_, err = taskCollection.DeleteOne(context.TODO(), bson.M{"_id": objID})
+	if err != nil {
+		return errors.New("failed to delete task")
+	}
+
+	return nil
 }
